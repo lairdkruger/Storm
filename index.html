@@ -131,7 +131,6 @@
 
 
         float turbulence( vec3 p ) {
-
             float w = 100.0;
             float t = -.5;
 
@@ -146,15 +145,12 @@
         void main() {
             // noise using displacement from position (big low frequency waves)
             noiseLF = lowFreqAmp * pnoise( 0.02 * position + vec3( 2.0 * time ), vec3( 100.0 ) );
-            //noiseLF = 0.0;
 
             // noise using displacement from position (medium mid frequency waves)
             noiseMF = midFreqAmp * pnoise( 0.1 * position + vec3( 2.0 * time ), vec3( 100.0 ) );
-            //noiseMF = 0.0;
 
             // noise using displacement from normals (small high frequency waves)
             noiseHF = highFreqAmp *  -.10 * turbulence( .5 * normal + time );
-            //noiseHF = 0.0;
 
             // compose both noises
             float displacement = (-15.0 * noiseHF) + noiseLF + noiseMF;
@@ -214,7 +210,7 @@
             var start = Date.now();
 
             //mic
-            var mic = new Microphone(128, 0.89);
+            var mic = new Microphone(256, 0.89);
             var volume, peak_vol;
             var bassVolume, midsVolume, highsVolume;
             var waveform_intensity = window.innerHeight / 10;
@@ -222,12 +218,11 @@
             
             //post-processing
             var noiseEffect;
-            
-            //noise params
-            var noise_movement = 0.0;
-            var noise_intensity = 0.18;
+            var noise_movement;
+            var noise_intensity;
             
             init();
+            initPostProcessing();
             animate();
 
             function init() {
@@ -235,7 +230,7 @@
                 scene = new THREE.Scene();
                 scene.background = new THREE.Color( 0x000000 );
 
-                camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.05, 300 );
+                camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.05, 1000 );
                 camera.position.z = 60;
                 camera.lookAt(new THREE.Vector3(0, 0, 0));
                 scene.add( camera );
@@ -248,20 +243,6 @@
                 renderer.setPixelRatio( window.devicePixelRatio );
                 renderer.setSize( window.innerWidth, window.innerHeight );
                 document.body.appendChild( renderer.domElement );
-                
-                //postprocessing effects composer
-                composer = new THREE.EffectComposer( renderer );
-                composer.addPass( new THREE.RenderPass( scene, camera ) );
-
-                /*var dotScreenEffect = new THREE.ShaderPass( THREE.DotScreenShader );
-                dotScreenEffect.uniforms[ 'scale' ].value = 4;
-                composer.addPass( dotScreenEffect );*/
-                
-                noiseEffect = new THREE.ShaderPass( THREE.NoiseShader );
-                noiseEffect.uniforms[ 'movement' ].value = noise_movement;
-                noiseEffect.uniforms[ 'intensity' ].value = noise_intensity;
-                noiseEffect.renderToScreen = true; //required by last effect in chain
-                composer.addPass( noiseEffect );
                 
                 pointLight = new THREE.PointLight( 0xffffff, 1 );
                 pointLight.position.set(0, 3, 0);
@@ -342,11 +323,31 @@
                     
                 wire = new THREE.Mesh( wireGeometry, wireMaterial );
                 scene.add( wire );
-
                 
                 window.addEventListener('resize', onResize, false);
                 onResize();
             }
+            
+            
+            function initPostProcessing() {
+                //postprocessing effects composer
+                composer = new THREE.EffectComposer( renderer );
+                composer.addPass( new THREE.RenderPass( scene, camera ) );
+
+                /*var dotScreenEffect = new THREE.ShaderPass( THREE.DotScreenShader );
+                dotScreenEffect.uniforms[ 'scale' ].value = 4;
+                composer.addPass( dotScreenEffect );*/
+                
+                noise_movement = 0.0;
+                noise_intensity = 0.18;
+
+                noiseEffect = new THREE.ShaderPass( THREE.NoiseShader );
+                noiseEffect.uniforms[ 'movement' ].value = noise_movement;
+                noiseEffect.uniforms[ 'intensity' ].value = noise_intensity;
+                noiseEffect.renderToScreen = true; //required by last effect in chain
+                composer.addPass( noiseEffect );
+            }
+            
             
             function updateMicData() {
                 volume = mic.volume;
@@ -354,6 +355,24 @@
                 bassVolume = mic.getBassVol();
                 midsVolume = mic.getMidsVol();
                 highsVolume = mic.getHighsVol();
+            }
+            
+            
+            function updateObjects() {
+                if (bassVolume) {
+                    rot = map(bassVolume, 0, 100, 0.001, 0.01);
+                } else {
+                    rot = 0.001;
+                }
+
+                smoke.rotation.y -= rot;
+                wire.rotation.y -= rot;
+                
+                smoke.rotation.x -= rot/2;
+                wire.rotation.x -= rot/2;
+                
+                smoke.rotation.z -= rot;
+                wire.rotation.z -= rot;
             }
             
             
@@ -366,15 +385,21 @@
             function updateShader() {
                 smokeMaterial.uniforms[ 'time' ].value = .00025 * ( Date.now() - start );
                 
-                smokeMaterial.uniforms[ 'lowFreqAmp' ].value = map(bassVolume, 0, 100, 1, 10);
-                smokeMaterial.uniforms[ 'midFreqAmp' ].value = map(midsVolume, 0, 100, 1, 4);
-                smokeMaterial.uniforms[ 'highFreqAmp' ].value = map(highsVolume, 0, 100, 1, 8) ** 2;
+                b = map(volume, 0, 100, 5, 15, true);
+                m = 3;
+                h = 7;
+                
+                smokeMaterial.uniforms[ 'lowFreqAmp' ].value = map(bassVolume, 0, 100, 1, b);
+                smokeMaterial.uniforms[ 'midFreqAmp' ].value = map(midsVolume, 0, 100, 1, m);
+                smokeMaterial.uniforms[ 'highFreqAmp' ].value = map(highsVolume, 0, 100, 1,h) ** 2;
                 
                 wireMaterial.uniforms[ 'time' ].value = .00025 * ( Date.now() - start );
+                
+                h = 8;
 
-                wireMaterial.uniforms[ 'lowFreqAmp' ].value = map(bassVolume, 0, 100, 1, 10);
-                wireMaterial.uniforms[ 'midFreqAmp' ].value = map(midsVolume, 0, 100, 1, 4);
-                wireMaterial.uniforms[ 'highFreqAmp' ].value = map(highsVolume, 0, 100, 1, 9) ** 2;
+                wireMaterial.uniforms[ 'lowFreqAmp' ].value = map(bassVolume, 0, 100, 1, b);
+                wireMaterial.uniforms[ 'midFreqAmp' ].value = map(midsVolume, 0, 100, 1, m);
+                wireMaterial.uniforms[ 'highFreqAmp' ].value = map(highsVolume, 0, 100, 1, h) ** 2;
             }
             
             
@@ -387,9 +412,8 @@
             
             
             function animate() {
-                
-                
                 updateMicData();
+                updateObjects();
                 updateShader();
                 updateEffects();
                 //updateCamera();
